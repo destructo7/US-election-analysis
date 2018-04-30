@@ -1,0 +1,219 @@
+---
+title: "Final Project_ US Presidential election analysis 2016"
+author: "Radha Krishna Chitikela"
+date: "May 5, 2017"
+output: html_document
+---
+##1.Objective:
+The main goal of this project is to analyse the effect of demographic features like education, race gender, immigration status, annual income of the family in determining the odds of voting for Donald trump compared to Hillary Clinton. All the other votes for independents and other parties were ignored. A weighted logistic regression model is fit with the objective to explore the resons that influenced the voters towards Donald Trump.
+
+##2.About the data:
+
+The analysis is based on the Cooperative Congressional Election Study 2016, which is a 64000+ person national stratified sample survey administered by Polimetrix.
+
+The survey consists of two waves in election years. In the pre-election phase, respondents answer two-thirds of the questionnaire. This segment of the survey asks about general political attitudes, various demographic factors, assessment of roll call voting choices, and political information. The pre-election phase is administered late September to late October and rolled out in three distinct time-periods, the end of September, the middle of October, and the end of October. Spacing of interviews across these intervals allows researchers to gauge the effects of campaign information and events on the state and district electorates. In the post-election phase, respondents answer the other third of the questionnaire, mostly consisting of items related to the election that just occurred. The post-election phase is administered in November.
+
+##3. Dataset description:
+###Overview of terminologies used in the dataset:
+- tookpost: This variable says whether the person has taken a post election survey. All the persons with tookpost = 'Yes' are considered for the analysis.
+- CC16_410a: The respondent's vote in the 2016 Presidential election. "NA" could mean they didn't vote or that they didn't take the post-election survey. The options include Donald Trump, Hillary Clinton  and others.
+- trump2: It is a binomial variable with "1" indicating a vote to Donald Trump and "0" indicating a vote to Hillary Clinton in 2016.
+- commonweight_post: The weights for people who took the post election survey 
+- inputstate:  The state in which the respondent is registered to vote. 
+- educ: A factor variable with six levels of education- No High School, High School Graduate, Some College but no degree, 2-year college degree, 4-year college degree.
+- gender: Male or Female
+- race: A factor variable indicating the race with levels: White, Black, Hispanic, Asian, Native American, Mixed, Other and Middle Eastern.
+- ideo5: A variable describing the ideology of the respondent varying from very liberal to conservative. This variable has 6 levels as Very liberal, liberal, moderate, conservative, very conservative and Not sure.
+- immstat: A variable describing the immigration status. It has levels as Immigrant Citizen, Immigrant noncitizen, First Generation immigrant, i.e the respondent born in USA but his/her parents were immigrants, Second generation immigrant, Third generation immigrant.
+- union: A factor variable indicating if the respondent is currently/formerly have been a member of a labor union.
+- hadjob: Says whether the respondent has a job in the past 5 years.
+- faminc: A factor variable with 17 levels indicating the annual family income of the respondent.
+- healthins: A factor variable indicating if the respondent has health insurance or not.
+
+##4. Variable selction and analysis:
+- We are considering only those who have participated in the post-election survey using the "tookpost" variable from the dataset.
+- Also, post-stratification weights are used to to weight the opinions using "commonweight_post", so effectively we are fitting a weighted logistic regression model.
+```{r}
+library(alr4)
+library(dplyr)
+library(ggplot2)
+library(faraway)
+CCES= read.csv("CCES.csv")
+nrow(CCES[CCES$tookpost == 'Yes',])
+CCES_post  = filter(CCES,tookpost == 'Yes',CC16_410a == "Donald Trump (Republican)" |CC16_410a == "Hillary Clinton (Democrat)"  )
+dim(CCES_post)
+CCES_post = subset(CCES_post,!is.na(CCES_post$CC16_410a))
+levels(CCES_post$CC16_410a)
+CCES_post$trump2 = ifelse(CCES_post$CC16_410a == "Donald Trump (Republican)",1,0)
+table(CCES_post$trump2)
+```
+##5. Data cleaning
+```{r}
+## take model variables
+CCES_sub  = CCES_post[,c("trump2","inputstate","educ","gender","race","ideo5","commonweight_post","immstat","union","faminc","edloan")]
+head(CCES_sub)
+summary(CCES_sub)
+dim(CCES_sub)
+xtabs(~edloan+trump2, data= CCES_sub)
+##check for rows with NA's and remove them
+row.has.na <- apply(CCES_sub, 1, function(x){any(is.na(x))})
+sum(row.has.na)
+CCES_sub = na.omit(CCES_sub)
+```
+- The data is cleaned before fitting the model and missing values are removed.
+
+##6. Exploratory data analysis:
+
+```{r}
+library(ggplot2)
+ggplot(CCES_sub,aes(x=ideo5, y = gender, color = factor(trump2)))+geom_point()+geom_jitter()+
+  labs(x= "Ideology", title = "Variation of  trump support with Ideology" )
+```
+
+- We notice that the support for trump is very low in respondents those who identified them with moderate to very liberal ideology. As the ideology moves towardss more conservative, the support to trump astronomically increased both in female and male respondents. 
+```{r}
+ggplot(CCES_sub,aes(x= educ, y = gender, color = factor(trump2)))+geom_point()+geom_jitter()+
+  labs(x= "Education", title = "Variation of  trump support with education" )
+```
+
+- We notice that support for trump is high in people with High School or lesser education. Both in male and female respondents, support for trump kept on decreasing with increase in level of education.
+
+```{r}
+ggplot(CCES_sub,aes(x=race, y = gender, color = factor(trump2)))+geom_point()+geom_jitter()+
+  labs(x= "Race", title = "Variation of  trump support with Race" )
+```
+
+- We see that the trump support is mostly concentrated in white population equally in both genders. However there is very less support for trump in black, Hispanic and Asian population given his policies against them.
+
+
+```{r}
+ggplot(CCES_sub, aes(x=gender,..count..))+geom_bar(aes(fill=factor(trump2)),position = "dodge") + labs(title = "Variation of  trump support with gender")
+ggplot(CCES_sub, aes(x=faminc,..count..))+geom_bar(aes(fill=factor(trump2)),position = "dodge") + labs(title = "Variation of  trump support with Annual family income")
+```
+
+- Considering only the gender, we can see that relatively female voters are against voting trump. This might indicate that as a support to Hillary Clinton or a retaliation to Trump's misogynic comments.
+- There is no clear trend of support or opposition to trump across the income ranges but, it is an important variable that might provide more information to the model.
+
+
+```{r}
+##convert all the factor variables to unordered variables
+CCES_sub$ideo5 = factor(CCES_sub$ideo5, ordered = F)
+CCES_sub$educ = factor(CCES_sub$educ, ordered = F)
+CCES_sub$inputstate = factor(CCES_sub$inputstate, ordered = F)
+CCES_sub$gender = factor(CCES_sub$gender, ordered = F)
+CCES_sub$race = factor(CCES_sub$race, ordered = F)
+CCES_sub$union = factor(CCES_sub$union, ordered = F)
+CCES_sub$immstat = factor(CCES_sub$immstat, ordered = F)
+CCES_sub$faminc = factor(CCES_sub$faminc, ordered = F)
+CCES_sub$edloan = factor(CCES_sub$edloan, ordered = F)
+```
+- All the predictors are converted to unordered factor variables, but still the order is preserved. This is done because, packages in R are not able to give interpretations to coefficient levels when ordinal factor variables with multiple levels are used.
+##7.Model Fitting
+```{r}
+m1.US = glm(trump2~gender+educ+ideo5+race+edloan+faminc+immstat,weights = CCES_sub$commonweight_post,
+            family = quasibinomial, data = CCES_sub)
+Anova(m1.US)
+m2.US = update(m1.US, .~. - immstat)
+Anova(m2.US)
+m3.US = glm(trump2~gender+educ+ideo5+race+edloan+faminc+educ:edloan+edloan:faminc+
+              gender:race+race:ideo5,weights = CCES_sub$commonweight_post,
+            family = quasibinomial, data = CCES_sub)
+Anova(m3.US)
+m4.US = update(m3.US, .~. - educ:edloan- edloan:faminc)
+summary(m4.US)
+```
+
+Note: Interaction effects have been ignored due to complex computations.
+
+##8.Interpretations:
+- The baseline level here is the respondent being a  white male with no high school education, a very liberal ideology and family income less than $10,000.
+- Gender: 
+The coefficient of gender female is -0.24. This says that the odds of a female voting to trump are 21 percent lower than males with the characteristics of baseline level.
+- Education:
+We see that as the education level increases, the chances to vote for trump instead of Hillary reduce. People with an education have 40% lesser odds of voting to trump than people with education less than high school.
+- Ideology:
+The chance of people voting to Trump instead of Hillary have been the lowest for those who termed themselves as very liberals and liberals. As the ideology level moved toward being more conservative, support to trump soared.
+- Race:
+From the coefficients, the odds of Blacks and Hispanics voting to Trump are 50% lesser than Whites. The odds of Native Americans voting to Trump are way lesser than that. However, Trump has a slightly higher support in Asian community.
+- Educational Loan:
+Respondents with educational loan have less chance to vote to Trump. Hillary's policies towards educational loan debt might explain this behaviour.
+
+- The interaction effects shows that in females, black and Middle eastern females especially have lesser odds to support trump.
+- Also, Blacks and Hispanics tend to oppose Trump irrespective of their ideologies. However, Native americans supported Trump at all ideology levels.
+
+##9. Some visualizations with the model fitted values.
+```{r}
+CCES_sub$fitted = fitted.values(m4.US)
+ggplot(CCES_sub,aes(x= ideo5, y = fitted, color = factor(trump2)))+geom_point()+geom_jitter()
+ggplot(CCES_sub,aes(x= gender, y = fitted, color = factor(trump2)))+geom_point()+geom_jitter()
+ggplot(CCES_sub,aes(x= ideo5, y = fitted, color = factor(trump2)))+geom_point()+geom_jitter()
+
+```
+
+##10.Model Testing
+
+```{r}
+with(m4.US, pchisq(null.deviance - deviance, df.null - df.residual, lower.tail = FALSE))
+Anova(m4.US, test = "Wald")
+Anova(m4.US, test = "LR")
+```
+- The model is significant compared to the null model.Both the Wald and Likelihood Ratio tests indicate that the coefficients can significantly explain the response variable.
+
+##11.Diagnostics
+```{r}
+##Normality check- qqplot
+
+qqnorm(residuals(m4.US))
+```
+- The qq norm plot is mostly linear at the middle, with curvature at the ends which says that the assumoption of normality is satisfied.
+
+###Residuals vs fitted plot with bins
+```{r}
+head(predict(m4.US)) ## predicted linear responses
+head(fitted(m4.US)) ## predicted probabilities
+
+CCES_sub = mutate(CCES_sub, residuals = residuals(m4.US), eta = predict(m4.US))
+gdf = group_by(CCES_sub, cut(eta, breaks=unique(quantile(eta, (1:1000)/1001))))
+dim(gdf)
+gdf[,14]
+diagdf = summarise(gdf, residuals=mean(residuals), eta=mean(eta))
+plot(residuals ~ eta, diagdf, xlab="linear predictor")
+```
+- The residuals plot indicate there might be hints of some heteroscedasticity in the data. 
+- Further analysis should be done to rectify this issue which I could not carry out as a part of this analysis.
+
+###Accuracy and ROC plot
+```{r}
+CCES_sub = mutate(CCES_sub, predprob = predict(m4.US, type = "response"))
+CCES_sub = mutate(CCES_sub, predout=ifelse(predprob < 0.5, "no", "yes"))
+xtabs( ~ trump2 + predout, CCES_sub)
+##The correct classification rate
+(19168+14117)/(2828+4545+19168+14117)
+##The misclassification rate
+1-(19168+14117)/(2828+4545+19168+14117)
+##Sensitivity
+14117/(14117+4545)
+##Specificity
+19168/(19168+2828)
+
+thresh = seq(0.01,0.5,0.01)
+Sensitivity = numeric(length(thresh))
+Specificity = numeric(length(thresh))
+for(j in seq(along=thresh)){
+  pp = ifelse(CCES_sub$predprob < thresh[j],"no","yes")
+  xx = xtabs( ~ trump2 + pp, CCES_sub)
+  Specificity[j] = xx[1,1]/(xx[1,1]+xx[1,2])
+  Sensitivity[j] = xx[2,2]/(xx[2,1]+xx[2,2])
+}
+matplot(thresh,cbind(Sensitivity,Specificity),type="l",xlab="Threshold",ylab="Proportion",lty=1:2)
+plot(1-Specificity,Sensitivity,type="l")
+
+
+```
+
+- The model has good sensitivity of 0.75 and specificity of 0.87 at the given threshold of 0.5.
+- However, at a threshold of 0.45, we have the ideal match of sensitivity and specificity.
+
+##12.Conclusion
+- From the analysis performed on the CCES survey data, it can be understood that Trump's victory can be attributed predominantly to white conservative population with income levels less than 30000 dollars. Education level of the voters also played a predominant role in Trump's victory.  
+- Women, blacks, Hispanics have extended their support to Hillary, however there is a reduction in support to Hillary compared to Obama, particularly in Black Male population.
